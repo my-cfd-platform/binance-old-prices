@@ -1,0 +1,56 @@
+name: Release Service
+
+on:
+  push:
+    tags:
+      - "*.*.*"
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: mycfdplatform/binance-price-feed
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup .NET Core
+        uses: actions/setup-dotnet@v1
+        with:
+          dotnet-version: 6.0.*
+
+      - name: Get current time
+        uses: MyJetTools/get-current-time@v2
+        id: current-time
+        with:
+          format: YYYY-MM-DD HH:mm:ss
+          utcOffset: "+00:00"
+
+      - name: Build
+        run: dotnet build --configuration Release /p:AssemblyVersion=${GITHUB_REF#refs/tags/}
+      - name: Test
+        run: dotnet test --no-build --configuration Release
+      - name: ls
+        run: ls
+
+      - name: Publish Service
+        run: dotnet publish ./src/Service.External.Binance/Service.External.Binance.csproj --configuration Release /p:AssemblyVersion=${GITHUB_REF#refs/tags/} --output ./publish-api
+
+      - name: Check Service dir
+        run: ls ./publish-api
+
+      - name: Extract branch name
+        shell: bash
+        run: echo "##[set-output name=branch;]$(echo ${GITHUB_REF#refs/tags/})"
+        id: extract_branch
+
+      - name: Publish image
+        uses: docker/build-push-action@v1
+        with:
+          username: ${{ secrets.DOCKER_USER }}
+          password: ${{ secrets.DOCKER_PASS }}
+          path: ./publish-api
+          registry: ${{env.REGISTRY}}
+          repository: ${{env.IMAGE_NAME}}
+          tag_with_ref: true
+          build_args: app_version=${GITHUB_REF#refs/tags/},app_compilation_date=${{ steps.current-time.outputs.formattedTime }}
